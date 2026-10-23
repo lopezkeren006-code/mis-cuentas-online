@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#235747">
+  <title>Mis cuentas · Abonos</title>
+  <style>
+    :root{--green:#235747;--bg:#f5f6f2;--text:#223b33;--muted:#68786e;--line:#dce4dc;--soft:#e9eee7;--danger:#9d3b3b}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+    button,input{font:inherit} button{cursor:pointer;border:0;border-radius:12px;padding:12px 16px;font-weight:700}
+    .primary{background:var(--green);color:white}.secondary{background:var(--soft);color:var(--green)}.danger{background:#f7e8e8;color:var(--danger)}
+    .wrap{max-width:900px;margin:auto;padding:24px 18px 60px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:24px}
+    .brand{display:flex;gap:12px;align-items:center}.icon{width:42px;height:42px;border-radius:13px;background:var(--green);color:white;display:grid;place-items:center;font-size:22px}
+    h1{font-size:25px;margin:0}.sub,.muted{color:var(--muted);font-size:14px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+    .search{width:100%;max-width:390px;border:1px solid #cbd6ce;border-radius:11px;padding:13px;background:white}
+    .section-title{font-size:12px;letter-spacing:1.5px;font-weight:800;margin:24px 0 10px}.list{display:grid;gap:12px}
+    .card{background:white;border:1px solid var(--line);border-radius:16px;padding:16px}.card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .name{font-weight:800;font-size:18px}.balance{font-weight:800}.positive{color:var(--green)}.zero{color:var(--muted)}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.actions button{padding:9px 12px}
+    .empty{text-align:center;background:white;border:1px dashed #c9d4cb;border-radius:16px;padding:55px 20px}.empty h2{margin-top:0}
+    .history{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}.row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eef2ee;font-size:14px}
+    footer{border-top:1px solid var(--line);margin-top:28px;padding-top:18px}.backup{display:flex;gap:10px;flex-wrap:wrap}
+    dialog{border:0;border-radius:18px;padding:0;max-width:440px;width:calc(100% - 28px);box-shadow:0 20px 60px #0003}dialog::backdrop{background:#0007}
+    .modal{padding:22px}.modal h2{margin-top:0}.field{display:grid;gap:6px;margin:14px 0}.field input{padding:12px;border:1px solid #cbd6ce;border-radius:10px;width:100%}
+    .modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}
+    @media(max-width:600px){.wrap{padding:18px 14px 45px}.top{align-items:flex-start}.top .muted{display:none}.toolbar>*{width:100%;max-width:none}.card-head{display:block}.balance{margin-top:8px}.actions button{flex:1}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><div class="icon">▤</div><div><h1>Mis cuentas</h1><div class="sub">Cada abono, con su fecha.</div></div></div>
+    <div class="muted">Guardado en este dispositivo</div>
+  </div>
+
+  <div class="toolbar">
+    <input id="search" class="search" placeholder="Buscar una persona...">
+    <button class="primary" id="addBtn">+ Persona</button>
+  </div>
+
+  <div class="section-title">MIS CLIENTES</div>
+  <div id="list" class="list"></div>
+
+  <footer>
+    <div class="backup">
+      <button class="secondary" id="exportBtn">Guardar respaldo</button>
+      <button class="secondary" id="importBtn">Restaurar respaldo</button>
+      <input id="fileInput" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p class="muted">Los datos se guardan únicamente en este navegador. Cada celular tendrá sus propios clientes y abonos.</p>
+  </footer>
+</div>
+
+<dialog id="personDialog"><form method="dialog" class="modal" id="personForm">
+  <h2>Nueva persona</h2>
+  <div class="field"><label>Nombre</label><input id="personName" required maxlength="80"></div>
+  <div class="field"><label>Monto inicial que debe</label><input id="initialAmount" required type="number" min="0" step="0.01" inputmode="decimal"></div>
+  <div class="modal-actions"><button value="cancel" class="secondary">Cancelar</button><button value="default" class="primary" id="savePerson">Guardar</button></div>
+</form></dialog>
+
+<dialog id="paymentDialog"><form method="dialog" class="modal" id="paymentForm">
+  <h2>Registrar abono</h2>
+  <div class="field"><label>Monto</label><input id="paymentAmount" required type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+  <div class="field"><label>Fecha</label><input id="paymentDate" required type="date"></div>
+  <div class="modal-actions"><button value="cancel" class="secondary">Cancelar</button><button value="default" class="primary" id="savePayment">Guardar abono</button></div>
+</form></dialog>
+
+<script>
+const KEY="mis_cuentas_local_v1";
+let data=load(), activeId=null;
+const $=s=>document.querySelector(s);
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||{people:[]}}catch{return {people:[]}}}
+function save(){localStorage.setItem(KEY,JSON.stringify(data));render()}
+function money(n){return Number(n||0).toLocaleString("es-HN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function balance(p){return Math.max(0,Number(p.initial||0)-p.payments.reduce((s,x)=>s+Number(x.amount||0),0))}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[m]))}
+function render(){
+ const q=$("#search").value.trim().toLowerCase(), list=$("#list");
+ const people=data.people.filter(p=>p.name.toLowerCase().includes(q));
+ if(!people.length){list.innerHTML=`<div class="empty"><h2>${data.people.length?"No hay coincidencias":"Tus cuentas, en orden"}</h2><p class="muted">${data.people.length?"Prueba otro nombre.":"Agrega una persona y registra sus abonos con fecha."}</p>${data.people.length?"":'<button class="primary" onclick="openPerson()">+ Agregar primera persona</button>'}</div>`;return}
+ list.innerHTML=people.map(p=>{
+  const b=balance(p), hist=[...p.payments].sort((a,b)=>b.date.localeCompare(a.date));
+  return `<div class="card"><div class="card-head"><div><div class="name">${esc(p.name)}</div><div class="muted">Deuda inicial: ${money(p.initial)}</div></div><div class="balance ${b>0?"positive":"zero"}">Saldo: ${money(b)}</div></div>
+  <div class="actions"><button class="primary" onclick="openPayment('${p.id}')">+ Abono</button><button class="secondary" onclick="toggleHistory('${p.id}')">Historial</button><button class="danger" onclick="removePerson('${p.id}')">Eliminar</button></div>
+  <div class="history" id="h-${p.id}" hidden>${hist.length?hist.map(x=>`<div class="row"><span>${esc(x.date)}</span><strong>- ${money(x.amount)}</strong></div>`).join(""):'<span class="muted">Todavía no hay abonos.</span>'}</div></div>`
+ }).join("")
+}
+function openPerson(){$("#personName").value="";$("#initialAmount").value="";$("#personDialog").showModal()}
+window.openPerson=openPerson;
+$("#addBtn").onclick=openPerson;
+$("#savePerson").onclick=e=>{
+ e.preventDefault(); const name=$("#personName").value.trim(), initial=Number($("#initialAmount").value);
+ if(!name||!Number.isFinite(initial)||initial<0)return alert("Completa correctamente los datos.");
+ data.people.push({id:crypto.randomUUID?crypto.randomUUID():Date.now().toString(),name,initial,payments:[]});
+ save();$("#personDialog").close()
+};
+window.openPayment=id=>{activeId=id;$("#paymentAmount").value="";$("#paymentDate").value=new Date().toISOString().slice(0,10);$("#paymentDialog").showModal()};
+$("#savePayment").onclick=e=>{
+ e.preventDefault(); const p=data.people.find(x=>x.id===activeId), amount=Number($("#paymentAmount").value), date=$("#paymentDate").value;
+ if(!p||!Number.isFinite(amount)||amount<=0||!date)return alert("Completa correctamente el abono.");
+ if(amount>balance(p))return alert("El abono no puede ser mayor que el saldo pendiente.");
+ p.payments.push({amount,date});save();$("#paymentDialog").close()
+};
+window.toggleHistory=id=>{const el=document.getElementById("h-"+id);el.hidden=!el.hidden};
+window.removePerson=id=>{const p=data.people.find(x=>x.id===id);if(p&&confirm(`¿Eliminar a ${p.name} y todos sus abonos?`)){data.people=data.people.filter(x=>x.id!==id);save()}};
+$("#search").oninput=render;
+$("#exportBtn").onclick=()=>{
+ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}),a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);a.download="respaldo-mis-cuentas.json";a.click();URL.revokeObjectURL(a.href)
+};
+$("#importBtn").onclick=()=>$("#fileInput").click();
+$("#fileInput").onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ try{const obj=JSON.parse(await f.text());if(!obj||!Array.isArray(obj.people))throw 0;if(confirm("Esto reemplazará los datos actuales. ¿Continuar?")){data=obj;save()}}catch{alert("El archivo de respaldo no es válido.")}e.target.value=""
+};
+render();
+</script>
+</body>
+</html>
